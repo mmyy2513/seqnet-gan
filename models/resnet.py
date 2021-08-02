@@ -3,7 +3,7 @@ from collections import OrderedDict
 import torch.nn.functional as F
 import torchvision
 from torch import nn
-
+import torch
 
 class Backbone(nn.Sequential):
     def __init__(self, resnet):
@@ -23,8 +23,10 @@ class Backbone(nn.Sequential):
         self.out_channels = 1024
 
     def forward(self, x):
+        #print("Backbone Input : ",x.shape)
         # using the forward method from nn.Sequential
         feat = super(Backbone, self).forward(x)
+        #print("Backbone Output : ",feat.shape)
         return OrderedDict([["feat_res4", feat]])
 
 
@@ -34,18 +36,30 @@ class Res5Head(nn.Sequential):
         self.out_channels = [1024, 2048]
 
     def forward(self, x):
+        #print("3 : ",x.shape)
         feat = super(Res5Head, self).forward(x)
+        
         x = F.adaptive_max_pool2d(x, 1)
+        #print("4 : ",x.shape)
+        #print("5 : ",feat.shape)
         feat = F.adaptive_max_pool2d(feat, 1)
+        #print("6 : ",feat.shape)
+        
         return OrderedDict([["feat_res4", x], ["feat_res5", feat]])
+
 
 
 def build_resnet(name="resnet50", pretrained=True):
     resnet = torchvision.models.resnet.__dict__[name](pretrained=pretrained)
-
+    #print(resnet)
     # freeze layers
     resnet.conv1.weight.requires_grad_(False)
     resnet.bn1.weight.requires_grad_(False)
     resnet.bn1.bias.requires_grad_(False)
 
     return Backbone(resnet), Res5Head(resnet)
+    #! return : 1024-dim feature map , [1x1x1024-dim feature map, 1x1x2048-dim feature map]
+
+
+backbone, box_head = build_resnet(name="resnet50", pretrained=True)
+

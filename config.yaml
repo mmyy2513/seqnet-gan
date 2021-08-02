@@ -1,0 +1,82 @@
+B_w: 0.2
+ID_class: 751
+ID_stride: 1
+ID_style: AB
+batch_size: 8
+beta1: 0
+beta2: 0.999
+crop_image_height: 256
+crop_image_width: 128
+data_root: ../MUNIT/datasets/Market/
+dis:
+  LAMBDA: 0.01
+  activ: lrelu
+  dim: 32
+  gan_type: lsgan
+  n_layer: 2
+  n_res: 4
+  non_local: 0
+  norm: none
+  num_scales: 3
+  pad_type: reflect
+display_size: 16
+erasing_p: 0.5
+gamma: 0.1
+gamma2: 0.1
+gan_w: 1
+gen:
+  activ: lrelu
+  dec: basic
+  dim: 16
+  dropout: 0
+  id_dim: 2048
+  mlp_dim: 512
+  mlp_norm: none
+  n_downsample: 2
+  n_res: 4
+  non_local: 0
+  pad_type: reflect
+  style_dim: 8
+  tanh: false
+  init: kaiming
+id_w: 1.0
+image_display_iter: 5000
+image_save_iter: 5000
+input_dim_a: 1
+input_dim_b: 1
+log_iter: 1
+lr2: 0.002
+lr_d: 0.0001
+lr_g: 0.0001
+lr_policy: multistep
+max_cyc_w: 2
+max_iter: 100000
+max_teacher_w: 2
+max_w: 1
+new_size: 128
+norm_id: false
+num_workers: 8
+pid_w: 1.0
+pool: max
+recon_s_w: 0
+recon_f_w: 0
+recon_id_w: 0.5
+recon_x_cyc_w: 0
+recon_x_w: 5
+recon_xp_w: 5
+single: gray
+snapshot_save_iter: 10000
+sqrt: false
+step_size: 60000
+teacher: best
+teacher_w: 0
+teacher_style: 0
+train_bn: true
+use_decoder_again: true
+use_encoder_again: 0.5
+vgg_w: 0
+warm_iter: 30000
+warm_scale: 0.0005
+warm_teacher_iter: 30000
+weight_decay: 0.0005
+when_encoder_again: 999999999

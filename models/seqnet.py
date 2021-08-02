@@ -99,6 +99,7 @@ class SeqNet(nn.Module):
     def inference(self, images, targets=None, query_img_as_gallery=False):
         original_image_sizes = [img.shape[-2:] for img in images]
         images, targets = self.transform(images, targets)
+        #print("\nInput shape : ", images.tensors.shape)
         features = self.backbone(images.tensors)
 
         if query_img_as_gallery:
@@ -125,8 +126,10 @@ class SeqNet(nn.Module):
     def forward(self, images, targets=None, query_img_as_gallery=False):
         if not self.training:
             return self.inference(images, targets, query_img_as_gallery)
-
+        
         images, targets = self.transform(images, targets)
+        
+        
         features = self.backbone(images.tensors)
         proposals, proposal_losses = self.rpn(images, features, targets)
         _, detector_losses = self.roi_heads(features, proposals, images.image_sizes, targets)

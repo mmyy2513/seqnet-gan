@@ -1,24 +1,43 @@
 import math
 import sys
 from copy import deepcopy
-
+import cv2
 import torch
 from torch.nn.utils import clip_grad_norm_
 from tqdm import tqdm
+import torchvision.transforms as transforms
+import random
+import numpy as np
+from torch.autograd import Variable
 
 from eval_func import eval_detection, eval_search_cuhk, eval_search_prw
 from utils.utils import MetricLogger, SmoothedValue, mkdir, reduce_dict, warmup_lr_scheduler
+from trainer import DGNet_Trainer, to_gray
 
+tf = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+
+def recover(inp):
+    """Imshow for Tensor."""
+    inp = inp.numpy().transpose((1, 2, 0)) # C,H,W(tensor) to H,W,C(numpy)
+    mean = np.array([0.485, 0.456, 0.406])
+    std = np.array([0.229, 0.224, 0.225])
+    inp = std * inp + mean # un-normalize
+    inp = inp * 255.0 # 0-1 to 0-255
+    inp = np.clip(inp, 0, 255)
+    return inp
 
 def to_device(images, targets, device):
+    
     images = [image.to(device) for image in images]
+    #images = [transforms.Grayscale(num_output_channels=3)(image) for image in images]
+    
     for t in targets:
         t["boxes"] = t["boxes"].to(device)
         t["labels"] = t["labels"].to(device)
     return images, targets
 
 
-def train_one_epoch(cfg, model, optimizer, data_loader, device, epoch, tfboard=None):
+def train_one_epoch(cfg, model,optimizer, data_loader, device, epoch, tfboard=None, model_g = None):
     model.train()
     metric_logger = MetricLogger(delimiter="  ")
     metric_logger.add_meter("lr", SmoothedValue(window_size=1, fmt="{value:.6f}"))
@@ -30,12 +49,81 @@ def train_one_epoch(cfg, model, optimizer, data_loader, device, epoch, tfboard=N
         # FIXME: min(1000, len(data_loader) - 1)
         warmup_iters = len(data_loader) - 1
         warmup_scheduler = warmup_lr_scheduler(optimizer, warmup_iters, warmup_factor)
-
+        
+#!!!! GENERATE ############################################################################################################################   
     for i, (images, targets) in enumerate(
         metric_logger.log_every(data_loader, cfg.DISP_PERIOD, header)
     ):
+        
+        save_name = targets[0]['img_name']
         images, targets = to_device(images, targets, device)
+        try:
+            if random.random() > 0.5 and model_g is not None:
+                imgs = []
+                with torch.no_grad():
+                    for image, target in zip(images, targets):
+                        im = image.cpu().numpy().transpose(1,2,0)*255
+                        
+                        origin = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+                        cv2.imwrite("res/original/"+save_name,origin)
+                        
+                        coords = target['boxes']
+                        
+                        gallery = []
+                        size_origin = []
+                        coord_origin = []
 
+                        for n, i in enumerate(coords):
+                            x1, y1, x2, y2 = int(i[0].item()), int(i[1].item()), int(i[2].item()), int(i[3].item())
+                            size_origin.append((abs(x1-x2), abs(y1-y2)))
+                            coord_origin.append((x1,y1,x2,y2))
+                            warp = cv2.resize(im[y1:y2, x1:x2], (128,256), interpolation= 3)
+                            warp = transforms.ToTensor()(warp.astype('uint8')).unsqueeze(0)
+                            warp = tf(warp)
+                            gallery.append(warp)
+                        
+                        if len(gallery) > 1:
+                            encode = model_g.gen_a.encode # encode function
+                            style_encode = model_g.gen_a.encode # encode function
+                            id_encode = model_g.id_a # encode function
+                            decode = model_g.gen_a.decode # decode function
+
+                            ind = random.randint(0, len(gallery)-1)
+                            
+                            structure = torch.stack(gallery).squeeze(1)
+                            
+                            bg_img = structure
+                            gray = to_gray(False)
+                            bg_img = gray(bg_img)
+                            bg_img = Variable(bg_img.to(device))
+                            
+                            id_img = gallery[ind]
+                            
+                            #cv2.imwrite("id"+save_name,recover(id_img.squeeze(0).data.cpu()))
+                            id_img = Variable(id_img.to(device))
+                            n, c, h, w = id_img.size()
+                            
+                            s = encode(bg_img)
+                            f, _ = id_encode(id_img)
+                            out = []
+                            for i in range(s.size(0)):
+                                s_tmp = s[i,:,:,:]
+                                outputs = decode(s_tmp.unsqueeze(0), f)
+                                tmp = recover(outputs[0].data.cpu())
+                                out.append(tmp)
+
+                            for i in range(len(out)):
+                                out[i] = cv2.resize(out[i], (size_origin[i][0], size_origin[i][1]))
+                                im[coord_origin[i][1]:coord_origin[i][3], coord_origin[i][0]:coord_origin[i][2]] = out[i]
+                                
+                            tmp3 = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+                            cv2.imwrite("res/after_"+save_name, tmp3)
+                        imgs.append(transforms.ToTensor()(im.astype('uint8')))
+                        
+                images = imgs
+                images, targets = to_device(images, targets, device)
+        except: pass
+#!!!! ######################################################################################################################################   
         loss_dict = model(images, targets)
         losses = sum(loss for loss in loss_dict.values())
 
@@ -60,11 +148,12 @@ def train_one_epoch(cfg, model, optimizer, data_loader, device, epoch, tfboard=N
 
         metric_logger.update(loss=loss_value, **loss_dict_reduced)
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
+        """
         if tfboard:
             iter = epoch * len(data_loader) + i
             for k, v in loss_dict_reduced.items():
                 tfboard.add_scalars("train", {k: v}, iter)
-
+        """
 
 @torch.no_grad()
 def evaluate_performance(
@@ -87,6 +176,7 @@ def evaluate_performance(
         query_feats = eval_cache["query_feats"]
         query_box_feats = eval_cache["query_box_feats"]
     else:
+        print("\n")
         gallery_dets, gallery_feats = [], []
         for images, targets in tqdm(gallery_loader, ncols=0):
             images, targets = to_device(images, targets, device)

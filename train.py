@@ -12,13 +12,41 @@ from engine import evaluate_performance, train_one_epoch
 from models.seqnet import SeqNet
 from utils.utils import mkdir, resume_from_ckpt, save_on_master, set_random_seed
 
+import sys
+dgnet_path = "/root/workplace/PersonSearch/DG-Net"
+sys.path.append(dgnet_path)
+
+from util import get_config
+from trainer import DGNet_Trainer, to_gray
+
+import argparse
+from torch.autograd import Variable
+
+import torch
+import os
+import numpy as np
+from torchvision import datasets
+from PIL import Image
+import cv2
+
+from torchvision.transforms import functional as F
+from torch.utils.data import DataLoader, Dataset
+import torchvision.transforms as transforms
+
+device = torch.device("cuda:1")
+
+name = 'E0.5new_reid0.5_w30000'
+
+config = get_config("config.yaml")
 
 def main(args):
     cfg = get_default_cfg()
+    
     if args.cfg_file:
         cfg.merge_from_file(args.cfg_file)
     cfg.merge_from_list(args.opts)
     cfg.freeze()
+    
 
     device = torch.device(cfg.DEVICE)
     if cfg.SEED >= 0:
@@ -27,6 +55,23 @@ def main(args):
     print("Creating model")
     model = SeqNet(cfg)
     model.to(device)
+    
+    if args.eval == False:
+        ## GAN
+        model_g = DGNet_Trainer(config)
+        model_g.to(device)
+        
+        state_dict_gen = torch.load(dgnet_path+"/outputs/%s/checkpoints/gen_00100000.pt"%name)
+        model_g.gen_a.load_state_dict(state_dict_gen['a'], strict=False)
+        model_g.gen_b = model_g.gen_a
+
+        state_dict_id = torch.load(dgnet_path+"/outputs/%s/checkpoints/id_00100000.pt"%name)
+        model_g.id_a.load_state_dict(state_dict_id['a'])
+        model_g.id_b = model_g.id_a
+        
+        model_g.to(device)
+        model_g.eval()
+
 
     print("Loading data")
     train_loader = build_train_loader(cfg)
@@ -82,7 +127,8 @@ def main(args):
     print("Start training")
     start_time = time.time()
     for epoch in range(start_epoch, cfg.SOLVER.MAX_EPOCHS):
-        train_one_epoch(cfg, model, optimizer, train_loader, device, epoch, tfboard)
+        print("EPOCH : ", epoch)
+        train_one_epoch(cfg, model, optimizer, train_loader, device, epoch, tfboard=None, model_g = model_g)
         lr_scheduler.step()
 
         if (epoch + 1) % cfg.EVAL_PERIOD == 0 or epoch == cfg.SOLVER.MAX_EPOCHS - 1:
@@ -104,7 +150,7 @@ def main(args):
                     "lr_scheduler": lr_scheduler.state_dict(),
                     "epoch": epoch,
                 },
-                osp.join(output_dir, f"epoch_{epoch}.pth"),
+                osp.join(output_dir, f"epoch_color{epoch}.pth"),
             )
 
     if tfboard:
@@ -115,6 +161,7 @@ def main(args):
 
 
 if __name__ == "__main__":
+    torch.multiprocessing.set_start_method('spawn')
     parser = argparse.ArgumentParser(description="Train a person search network.")
     parser.add_argument("--cfg", dest="cfg_file", help="Path to configuration file.")
     parser.add_argument(
@@ -129,3 +176,4 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     main(args)
+

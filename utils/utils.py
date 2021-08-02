@@ -42,7 +42,7 @@ class SmoothedValue(object):
         """
         if not is_dist_avail_and_initialized():
             return
-        t = torch.tensor([self.count, self.total], dtype=torch.float64, device="cuda")
+        t = torch.tensor([self.count, self.total], dtype=torch.float64, device="cuda:1")
         dist.barrier()
         dist.all_reduce(t)
         t = t.tolist()
@@ -207,11 +207,11 @@ def all_gather(data):
     # serialized to a Tensor
     buffer = pickle.dumps(data)
     storage = torch.ByteStorage.from_buffer(buffer)
-    tensor = torch.ByteTensor(storage).to("cuda")
+    tensor = torch.ByteTensor(storage).to("cuda:1")
 
     # obtain Tensor size of each rank
-    local_size = torch.tensor([tensor.numel()], device="cuda")
-    size_list = [torch.tensor([0], device="cuda") for _ in range(world_size)]
+    local_size = torch.tensor([tensor.numel()], device="cuda:1")
+    size_list = [torch.tensor([0], device="cuda:1") for _ in range(world_size)]
     dist.all_gather(size_list, local_size)
     size_list = [int(size.item()) for size in size_list]
     max_size = max(size_list)
@@ -221,9 +221,9 @@ def all_gather(data):
     # gathering tensors of different shapes
     tensor_list = []
     for _ in size_list:
-        tensor_list.append(torch.empty((max_size,), dtype=torch.uint8, device="cuda"))
+        tensor_list.append(torch.empty((max_size,), dtype=torch.uint8, device="cuda:1"))
     if local_size != max_size:
-        padding = torch.empty(size=(max_size - local_size,), dtype=torch.uint8, device="cuda")
+        padding = torch.empty(size=(max_size - local_size,), dtype=torch.uint8, device="cuda:1")
         tensor = torch.cat((tensor, padding), dim=0)
     dist.all_gather(tensor_list, tensor)
 
