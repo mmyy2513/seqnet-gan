@@ -83,6 +83,10 @@ def eval_detection(
     print("  recall = {:.2%}".format(det_rate))
     if not labeled_only:
         print("  ap = {:.2%}".format(ap))
+    with open("RESULT_aug.txt", 'a') as f:
+        f.write("{} detection:\n".format("labeled only" if labeled_only else "all"))
+        f.write("  recall = {:.2%}\n".format(det_rate))
+        f.write("  ap = {:.2%}\n".format(ap))
     return det_rate, ap
 
 
@@ -477,7 +481,12 @@ def eval_search_prw(
     accs = np.mean(accs, axis=0)
     for i, k in enumerate(topk):
         print("  top-{:2d} = {:.2%}".format(k, accs[i]))
-
+    with open("RESULT_aug.txt", 'a') as f:
+        f.write("search ranking:\n")
+        f.write("  mAP = {:.2%}\n".format(mAP))
+        for i, k in enumerate(topk):
+            f.write("  top-{:2d} = {:.2%}\n".format(k, accs[i]))
+        f.write("==============================================\n")
     # write_json(ret, "vis/results.json")
 
     ret["mAP"] = np.mean(aps)

@@ -11,7 +11,7 @@ class Backbone(nn.Sequential):
             OrderedDict(
                 [
                     ["conv1", resnet.conv1],
-                    ["bn1", resnet.bn1],
+                    #["bn1", resnet.bn1],
                     ["relu", resnet.relu],
                     ["maxpool", resnet.maxpool],
                     ["layer1", resnet.layer1],  # res2
@@ -54,8 +54,8 @@ def build_resnet(name="resnet50", pretrained=True):
     #print(resnet)
     # freeze layers
     resnet.conv1.weight.requires_grad_(False)
-    resnet.bn1.weight.requires_grad_(False)
-    resnet.bn1.bias.requires_grad_(False)
+    #resnet.bn1.weight.requires_grad_(False)
+    #resnet.bn1.bias.requires_grad_(False)
 
     return Backbone(resnet), Res5Head(resnet)
     #! return : 1024-dim feature map , [1x1x1024-dim feature map, 1x1x2048-dim feature map]

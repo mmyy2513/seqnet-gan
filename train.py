@@ -33,7 +33,7 @@ from torchvision.transforms import functional as F
 from torch.utils.data import DataLoader, Dataset
 import torchvision.transforms as transforms
 
-device = torch.device("cuda:1")
+device = torch.device("cuda")
 
 name = 'E0.5new_reid0.5_w30000'
 
@@ -49,6 +49,7 @@ def main(args):
     
 
     device = torch.device(cfg.DEVICE)
+    
     if cfg.SEED >= 0:
         set_random_seed(cfg.SEED)
 
@@ -56,7 +57,7 @@ def main(args):
     model = SeqNet(cfg)
     model.to(device)
     
-    if args.eval == False:
+    if args.eval == False: #train
         ## GAN
         model_g = DGNet_Trainer(config)
         model_g.to(device)
@@ -150,7 +151,7 @@ def main(args):
                     "lr_scheduler": lr_scheduler.state_dict(),
                     "epoch": epoch,
                 },
-                osp.join(output_dir, f"epoch_color{epoch}.pth"),
+                osp.join(output_dir, f"epoch_aug{epoch}.pth"),
             )
 
     if tfboard:

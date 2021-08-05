@@ -50,29 +50,44 @@ def train_one_epoch(cfg, model,optimizer, data_loader, device, epoch, tfboard=No
         warmup_iters = len(data_loader) - 1
         warmup_scheduler = warmup_lr_scheduler(optimizer, warmup_iters, warmup_factor)
         
-#!!!! GENERATE ############################################################################################################################   
+
     for i, (images, targets) in enumerate(
         metric_logger.log_every(data_loader, cfg.DISP_PERIOD, header)
     ):
         
         save_name = targets[0]['img_name']
         images, targets = to_device(images, targets, device)
+
+#!!!! GENERATE ############################################################################################################################           
         try:
             if random.random() > 0.5 and model_g is not None:
                 imgs = []
+                targets_ = []
+                
                 with torch.no_grad():
                     for image, target in zip(images, targets):
+                        
+                        #* save original things
+                        imgs.append(image)
+                        targets_.append(target)
+                        
+                        #* tensor2numpy
                         im = image.cpu().numpy().transpose(1,2,0)*255
                         
-                        origin = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
-                        cv2.imwrite("res/original/"+save_name,origin)
+                        #* original image
+                        #origin = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+                        #cv2.imwrite("res/original/"+save_name,origin)
                         
+                        #* get ground-truth coordinates
                         coords = target['boxes']
                         
+                        #* vars to save gt info
                         gallery = []
                         size_origin = []
                         coord_origin = []
 
+                        #* get size, coords of each bbox
+                        #* bbox resize to generate
                         for n, i in enumerate(coords):
                             x1, y1, x2, y2 = int(i[0].item()), int(i[1].item()), int(i[2].item()), int(i[3].item())
                             size_origin.append((abs(x1-x2), abs(y1-y2)))
@@ -82,47 +97,65 @@ def train_one_epoch(cfg, model,optimizer, data_loader, device, epoch, tfboard=No
                             warp = tf(warp)
                             gallery.append(warp)
                         
+                        #* if only 1 bbox --> pass
                         if len(gallery) > 1:
                             encode = model_g.gen_a.encode # encode function
                             style_encode = model_g.gen_a.encode # encode function
                             id_encode = model_g.id_a # encode function
                             decode = model_g.gen_a.decode # decode function
 
-                            ind = random.randint(0, len(gallery)-1)
-                            
+                            #* images to reconstruct
                             structure = torch.stack(gallery).squeeze(1)
                             
+                            #* to gray
                             bg_img = structure
                             gray = to_gray(False)
                             bg_img = gray(bg_img)
                             bg_img = Variable(bg_img.to(device))
                             
-                            id_img = gallery[ind]
-                            
-                            #cv2.imwrite("id"+save_name,recover(id_img.squeeze(0).data.cpu()))
-                            id_img = Variable(id_img.to(device))
-                            n, c, h, w = id_img.size()
-                            
+                            #* construct vector
                             s = encode(bg_img)
-                            f, _ = id_encode(id_img)
+                            
+                            #* appearance vector
+                            a = []
+                            for ref in gallery:
+                                id_img = ref
+                                id_img = Variable(id_img.to(device))
+                                n, c, h, w = id_img.size()
+                                feat, _ = id_encode(id_img)
+                                a.append(feat)
+                                                        
+                            #* generate
                             out = []
                             for i in range(s.size(0)):
+                                #* pick 1 reference appearance image
+                                ind = random.randint(0, len(gallery)-1)
+                                f = a[ind]
+                                
                                 s_tmp = s[i,:,:,:]
                                 outputs = decode(s_tmp.unsqueeze(0), f)
                                 tmp = recover(outputs[0].data.cpu())
                                 out.append(tmp)
 
+                            #* copy to original image
                             for i in range(len(out)):
                                 out[i] = cv2.resize(out[i], (size_origin[i][0], size_origin[i][1]))
                                 im[coord_origin[i][1]:coord_origin[i][3], coord_origin[i][0]:coord_origin[i][2]] = out[i]
                                 
+                            #* reconstructed image   
                             tmp3 = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
                             cv2.imwrite("res/after_"+save_name, tmp3)
+                        
+                        #* save reconstructed image(tensor) - augment
                         imgs.append(transforms.ToTensor()(im.astype('uint8')))
+                        targets_.append(target)
                         
                 images = imgs
+                targets = targets_
+                
                 images, targets = to_device(images, targets, device)
         except: pass
+        
 #!!!! ######################################################################################################################################   
         loss_dict = model(images, targets)
         losses = sum(loss for loss in loss_dict.values())
